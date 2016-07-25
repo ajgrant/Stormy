@@ -1,10 +1,19 @@
 package com.testapps.aj.stormy;
 
-import android.app.DownloadManager;
+import android.*;
+import android.Manifest;
 import android.content.Context;
+import android.content.IntentSender;
+import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -15,10 +24,19 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.location.LocationListener;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.maps.model.LatLng;
+
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Locale;
 
 import butterknife.BindView;
 import butterknife.ButterKnife;
@@ -29,9 +47,20 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 
-public class MainActivity extends AppCompatActivity  {
+public class MainActivity extends AppCompatActivity implements
+        GoogleApiClient.ConnectionCallbacks,
+        GoogleApiClient.OnConnectionFailedListener,
+        LocationListener {
 
     public static final String TAG = MainActivity.class.getSimpleName();
+
+    private GoogleApiClient mGoogleApiClient;
+    private LocationRequest mLocationRequest;
+    private static final int MY_PERMISSIONS_REQUEST_FINE_LOCATION = 1;
+    private static final int CONNECTION_FAILURE_RESOLUTION_REQUEST = 1;
+    private boolean mHasPermission = false;
+    private LatLng mLatLng = new LatLng(40.751102, -73.979417);
+    private String mCity,mState;
 
     private CurrentWeather mCurrentWeather;
     @BindView(R.id.timeLabel) TextView mTimeLabel;
@@ -42,6 +71,7 @@ public class MainActivity extends AppCompatActivity  {
     @BindView(R.id.iconImageView) ImageView mIconImageView;
     @BindView(R.id.refreshImageView) ImageView mRefreshImageView;
     @BindView(R.id.progressBar) ProgressBar mProgressBar;
+    @BindView(R.id.locationLabel) TextView mLocationLabel;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,22 +79,83 @@ public class MainActivity extends AppCompatActivity  {
         setContentView(R.layout.activity_main);
         ButterKnife.bind(this);
 
+        mGoogleApiClient = new GoogleApiClient.Builder(this)
+                .addApi(LocationServices.API)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .build();
+
+        mLocationRequest = LocationRequest.create()
+                .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+                .setInterval(10000)        // 10 seconds, in milliseconds
+                .setFastestInterval(1000); // 1 second, in milliseconds
+
         mProgressBar.setVisibility(View.INVISIBLE);
-
-        final double latitude = 37.8267;
-        final double longitude = -122.423;
-
         mRefreshImageView.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                getForecast(latitude,longitude);
+                getPermission();
             }
         });
-        getForecast(latitude,longitude);
+        getPermission();
     }
 
-    private void getForecast(double latitude, double longitude) {
+    private void getPermission() {
+        boolean doesNotHavePermission =
+                (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                        && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED);
+
+        if (doesNotHavePermission) {
+            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, MY_PERMISSIONS_REQUEST_FINE_LOCATION);
+        } else {
+            mHasPermission = true;
+            if (mGoogleApiClient.isConnected()) {
+                getLocation();
+            }
+        }
+    }
+
+    public void getLocation() {
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+
+            ActivityCompat.requestPermissions(this, new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, MY_PERMISSIONS_REQUEST_FINE_LOCATION);
+        }
+        Location location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        if (location == null) {
+            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+        } else {
+            handleNewLocation(location);
+
+        }
+    }
+
+    private void handleNewLocation(Location location) {
+        Log.d(TAG, location.toString());
+        Log.i(TAG, "Fuck");
+        Geocoder geocoder = new Geocoder(this, Locale.getDefault());
+        double currentLatitude = location.getLatitude();
+        double currentLongitude = location.getLongitude();
+        try {
+            List<android.location.Address> addresses = geocoder.getFromLocation(currentLatitude, currentLongitude, 1);
+            if (addresses.size() > 0) {
+                mCity = addresses.get(0).getLocality();
+                mState = addresses.get(0).getAdminArea();
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Exception caught: ", e);
+        }
+        mLatLng = new LatLng(currentLatitude, currentLongitude);
+        Log.d(TAG, currentLatitude + "");
+        Log.d(TAG, currentLongitude + "");
+        getForecast();
+    }
+
+    private void getForecast() {
         String apiKey = "964a36ba44cbbeba26d95a4e98f3e357";
+
+        double latitude = mLatLng.latitude;
+        double longitude = mLatLng.longitude;
 
         String forecastUrl = "https://api.forecast.io/forecast/" + apiKey + "/" + latitude + "," + longitude;
 
@@ -138,6 +229,7 @@ public class MainActivity extends AppCompatActivity  {
         mSummaryLabel.setText(mCurrentWeather.getSummary() + "");
         Drawable drawable = ContextCompat.getDrawable(this, mCurrentWeather.getIconId());
         mIconImageView.setImageDrawable(drawable);
+        mLocationLabel.setText(mCity + ", " + mState);
     }
 
     private CurrentWeather getCurrentDetails(String jsonData) throws JSONException {
@@ -170,5 +262,83 @@ public class MainActivity extends AppCompatActivity  {
     private void alertUserAboutError() {
         AlertDialogFragment dialog = new AlertDialogFragment();
         dialog.show(getFragmentManager(),"error_dialog");
+    }
+
+    @Override
+    public void onConnected(Bundle bundle) {
+        Log.i(TAG, "Location services requested.");
+        if (mHasPermission) {
+            getLocation();
+        } else {
+            getPermission();
+        }
+
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        //setUpMapIfNeeded();
+        if (!mGoogleApiClient.isConnected()) {
+            mGoogleApiClient.connect();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (mGoogleApiClient.isConnected()) {
+            LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
+            mGoogleApiClient.disconnect();
+        }
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+        Log.i(TAG, "Location services suspended. Please reconnect.");
+    }
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+        if (connectionResult.hasResolution()) {
+            try {
+                // Start an Activity that tries to resolve the error
+                connectionResult.startResolutionForResult(this, CONNECTION_FAILURE_RESOLUTION_REQUEST);
+            } catch (IntentSender.SendIntentException e) {
+                e.printStackTrace();
+            }
+        } else {
+            Log.i(TAG, "Location services connection failed with code " + connectionResult.getErrorCode());
+        }
+    }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        handleNewLocation(location);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String permissions[], int[] grantResults) {
+        switch (requestCode) {
+            case MY_PERMISSIONS_REQUEST_FINE_LOCATION: {
+                // If request is cancelled, the result arrays are empty.
+                Log.i(TAG, "Waiting for permission status");
+                if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                    mGoogleApiClient.connect();
+                    Log.i(TAG, "Connecting to Google API");
+                    mHasPermission = true;
+
+                } else {
+                    Toast.makeText(this, R.string.permission_denied_message, Toast.LENGTH_SHORT).show();
+                    Log.i(TAG, "Location denied");
+                    mCity = "New York";
+                    mState = "New York";
+                    getForecast();
+
+                }
+            }
+
+
+        }
     }
 }

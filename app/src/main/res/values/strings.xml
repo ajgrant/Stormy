@@ -4,4 +4,5 @@
     <string name="error_title">Oops! Sorry!</string>
     <string name="error_message">There was an error. Please try again</string>
     <string name="error_ok_button_text">OK</string>
+    <string name="permission_denied_message">Access to location was denied</string>
 </resources>
